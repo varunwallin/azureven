@@ -1,0 +1,59 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  subscription_id: 'd560f02f-91d4-4a3a-afd3-0a220fc6762c'
+  tfWorkDir: '.'  # Path to your Terraform files
+  tfServiceConnection: 'sc-sp-lza-azure-vending'
+  tfStateServiceConnection: 'cloud-services-state-sp'
+  tfStatefileResourceGroup: 'rg-aue-prd-csmgt-tf'
+  tfStorageAccount: 'saaeprdcsmgttf'
+  tfStatefileContainer: 'aue-az-lzvending-prd-tf-state'
+  tfStatefileKey: 'new-terraform.tfstate'
+
+steps:
+# Install Python
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.x'
+    addToPath: true
+
+# Install Terraform
+- task: TerraformInstaller@1
+  displayName: 'Install Terraform 1.4.6'
+  inputs:
+    terraformVersion: '1.4.6'
+
+# Initialize Terraform
+- task: TerraformTaskV4@4
+  displayName: 'Terraform : Init'
+  inputs:
+    command: init
+    workingDirectory: '$(System.DefaultWorkingDirectory)/$(tfWorkDir)'
+    backendServiceArm: $(tfStateServiceConnection)
+    backendAzureRmResourceGroupName: $(tfStatefileResourceGroup)
+    backendAzureRmStorageAccountName: $(tfStorageAccount)
+    backendAzureRmContainerName: $(tfStatefileContainer)
+    backendAzureRmKey: $(tfStatefileKey)
+    environmentServiceNameAzureRM: $(tfServiceConnection)
+
+# Run Terraform Plan
+- task: TerraformTaskV4@4
+  displayName: 'Terraform : Plan'
+  inputs:
+    command: plan
+    workingDirectory: '$(System.DefaultWorkingDirectory)/$(tfWorkDir)'
+    environmentServiceNameAzureRM: $(tfServiceConnection)
+    commandOptions: '-var="subscription_id=$(subscription_id)"'
+
+# Run Terraform Apply
+- task: TerraformTaskV4@4
+  displayName: 'Terraform : Apply'
+  inputs:
+    command: apply
+    workingDirectory: '$(System.DefaultWorkingDirectory)/$(tfWorkDir)'
+    environmentServiceNameAzureRM: $(tfServiceConnection)
+    commandOptions: '-auto-approve -var="subscription_id=$(subscription_id)"'
