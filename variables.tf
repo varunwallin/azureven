@@ -1,160 +1,90 @@
-variable "management_subscription_id" {
+variable "budget_name" {
+  description = "The name of the budget."
   type        = string
-  default     = "d560f02f-91d4-4a3a-afd3-0a220fc6762c"
-  description = "The ID of the management subscription."
 }
 
-variable "subscription_id" {
+variable "budget_scope" {
+  description = "The scope of the budget."
   type        = string
-  default     = ""
-  description = "Existing subscription ID. If blank, a new subscription will be created."
 }
 
-variable "subscription_alias_enabled" {
-  type        = bool
-  default     = true
-  description = "Whether to enable the subscription alias feature."
+variable "budget_amount" {
+  description = "The total amount of cost to track with the budget."
+  type        = number
 }
 
-
-variable "subscription_management_group_association_enabled" {
-  type        = bool
-  default     = true
-  description = "Whether to associate the subscription with a management group."
-}
-
-variable "subscription_management_group_id" {
+variable "budget_time_grain" {
+  description = "The time grain of the budget."
   type        = string
-  default     = "lza-th-au-bis-prod" # Update to short ID
-
-  description = "The ID of the management group to associate the subscription with."
-}
-
-variable "subscription_tags" {
-  type        = map(string)
-  default     = {}
-  description = "Tags to assign to the subscription. Example: { environment = 'prod', team = 'devops' }"
-}
-
-variable "subscription_use_azapi" {
-  type        = bool
-  default     = false
-  description = "Whether to use the azapi provider for the subscription alias."
-}
-
-variable "subscription_update_existing" {
-  type        = bool
-  default     = false
-  description = "Whether to update an existing subscription."
-}
-
-variable "subscription_workload" {
-  type        = string
-  default     = "Production"
-  description = "The workload type for the subscription. Allowed values: 'Production', 'DevTest'."
-}
-
-variable "wait_for_subscription_before_subscription_operations" {
-  type = object({
-    create  = optional(string, "30s")
-    destroy = optional(string, "0s")
-  })
-  default     = {}
-  description = "The duration to wait after vending a subscription before performing subscription operations."
-}
-
-variable "location" {
-  type        = string
-  default     = "australiaeast"
-  description = "The location for resources created by this module."
-}
-
-variable "disable_telemetry" {
-  type        = bool
-  default     = false
-  description = "Whether to disable telemetry."
-}
-
-
-
-
-
-#variables for resource group 
-variable "resource_group_creation_enabled" {
-  type        = bool
-  default     = true
-  description = "Whether to create additional resource groups in the target subscription. Requires `var.resource_groups`."
-}
-
-variable "resource_groups" {
-  type = map(object({
-    name     = string
-    location = string
-    tags     = optional(map(string), {})
-  }))
-  default = {
-    rg1 = {
-      name     = "DefaultResourceGroup"
-      location = "australiaeast"
-      tags     = {
-        environment = "default"
-      }
-    }
+  validation {
+    condition     = contains(["Annually", "BillingAnnual", "BillingMonth", "BillingQuarter", "Monthly", "Quarterly"], var.budget_time_grain)
+    error_message = "Time period must be one of Annually, BillingAnnual, BillingMonth, BillingQuarter, Monthly, or Quarterly."
   }
-  description = "A map of resource groups to create."
 }
 
-variable "network_watcher_resource_group_enabled" {
-  type        = bool
-  default     = false
-  description = "Whether to enable the network watcher resource group creation."
+variable "budget_time_period" {
+  description = "The time period of the budget."
+  type = object({
+    start_date = string
+    end_date   = string
+  })
+  validation {
+    condition     = can(regex("^[0-9]{4}-[0-9]{2}-01T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.budget_time_period.start_date))
+    error_message = "Start date should be in the format yyyy-MM-01THH:mm:ssZ."
+  }
+  validation {
+    condition     = timecmp(var.budget_time_period.start_date, var.budget_time_period.end_date) == -1 && can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.budget_time_period.end_date))
+    error_message = "Start date should be earlier than end date and in the format yyyy-MM-ddTHH:mm:ssZ."
+  }
 }
 
-
-### variable group for Budget 
-
-variable "budget_enabled" {
-  type        = bool
-  description = "Whether to create budgets."
-  default     = true
-}
-
-
-
-variable "budgets" {
+variable "budget_notifications" {
+  description = "The notifications for the budget."
   type = map(object({
-    name            = string
-    amount          = number
-    time_grain      = string
-    time_period_start = string
-    time_period_end   = string
-    notifications   = optional(map(object({
-      enabled        = bool
-      operator       = string
-      threshold      = number
-      threshold_type = optional(string, "Actual")
-      contact_emails = optional(list(string), [])
-      contact_roles  = optional(list(string), [])
-      contact_groups = optional(list(string), [])
-      locale         = optional(string, "en-us")
-    })), {})
+    enabled        = bool
+    operator       = string
+    threshold      = number
+    threshold_type = optional(string, "Actual")
+    contact_emails = optional(list(string), [])
+    contact_roles  = optional(list(string), [])
+    contact_groups = optional(list(string), [])
+    locale         = optional(string, "en-us")
   }))
-  default = {
-    budget1 = {
-      name            = "MonthlyBudget"
-      amount          = 150
-      time_grain      = "Monthly"
-      time_period_start = "2024-12-01T00:00:00Z"  # Adjusted to the first day of the current month
-      time_period_end   = "2024-12-31T23:59:59Z"
-      notifications = {
-        eightypercent = {
-          enabled        = true
-          operator       = "GreaterThan"
-          threshold      = 80
-          threshold_type = "Actual"
-          contact_emails = ["user@example.com"]
-        }
-      }
-    }
+  default = {}
+  validation {
+    condition     = length(keys(var.budget_notifications)) <= 5
+    error_message = "Maximum number of notifications per budget is 5."
+  }
+  validation {
+    condition = alltrue([
+      for notification in var.budget_notifications : contains(["GreaterThan", "GreaterThanOrEqualTo"], notification.operator)
+    ])
+
+    error_message = "Operator must be one of GreaterThan or GreaterThanOrEqualTo."
+  }
+  validation {
+    condition = alltrue([
+      for notification in var.budget_notifications :
+      contains(["Actual", "Forecasted"], notification.threshold_type)
+    ])
+    error_message = "Threshold type must be one of Actual or Forecasted."
+  }
+  validation {
+    condition = alltrue([
+      for notification in var.budget_notifications : notification.threshold >= 0 && notification.threshold <= 1000
+    ])
+    error_message = "Threshold must be between 0 and 1000."
+  }
+  validation {
+    condition = alltrue([
+      for notification in var.budget_notifications : can(regex("^[a-z]{2}-[a-z]{2}$", notification.locale))
+    ])
+    error_message = "Locale must be in the format xx-xx."
+  }
+  validation {
+    condition = alltrue([
+      for notification in var.budget_notifications : length(notification.contact_emails) > 0 || length(notification.contact_roles) > 0 || length(notification.contact_groups) > 0
+    ])
+    error_message = "At least one of contact_emails, contact_roles, or contact_groups must be supplied."
   }
 }
